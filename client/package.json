@@ -16,7 +16,7 @@
   "dependencies": {
     "jsonc-parser": "^3.2.0",
     "semver": "7.5.2",
-    "vscode-languageclient": "^8.0.1"
+    "vscode-languageclient": "^8.1.0"
   },
   "devDependencies": {
     "@types/semver": "7.3.9",
