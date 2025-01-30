@@ -29,12 +29,17 @@ import { registryState } from "./lsp_extensions";
 import { createRegistryStateHandler } from "./notification_handlers";
 import { DenoServerInfo } from "./server_info";
 
-import * as semver from "semver";
+import * as dotenv from "dotenv";
 import * as vscode from "vscode";
 import { LanguageClient, ServerOptions } from "vscode-languageclient/node";
 import type { Location, Position } from "vscode-languageclient/node";
-import { getWorkspacesEnabledInfo, setupCheckConfig } from "./enable";
+import { getWorkspacesEnabledInfo, isPathEnabled } from "./enable";
 import { denoUpgradePromptAndExecute } from "./upgrade";
+import * as fs from "fs";
+import * as path from "path";
+import * as process from "process";
+import * as jsoncParser from "jsonc-parser/lib/esm/main.js";
+import { semver } from "./semver";
 
 // deno-lint-ignore no-explicit-any
 export type Callback = (...args: any[]) => unknown;
@@ -59,6 +64,15 @@ export function cacheActiveDocument(
     }, () => {
       return vscode.commands.executeCommand("deno.cache", [uri], uri);
     });
+  };
+}
+
+export function clearHiddenPromptStorage(
+  context: vscode.ExtensionContext,
+  _extensionContext: DenoExtensionContext,
+): Callback {
+  return () => {
+    context.globalState.update("deno.tsConfigPathsWithPromptHidden", []);
   };
 }
 
@@ -94,6 +108,9 @@ export function startLanguageServer(
     extensionContext.clientSubscriptions = [];
 
     if (isDenoDisabledCompletely()) {
+      extensionContext.outputChannel.appendLine(
+        'Warning: The Deno language server is explicitly disabled for every directory. If this is not intentional, check your user and workspace settings for entries like `"deno.enable": false` and `"deno.enablePaths": []`.',
+      );
       return;
     }
 
@@ -118,14 +135,34 @@ export function startLanguageServer(
 
     const config = vscode.workspace.getConfiguration(EXTENSION_NS);
 
-    const env: Record<string, string> = {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    const env: Record<string, string | undefined> = {
       ...process.env,
-      "DENO_V8_FLAGS": getV8Flags(),
-      "NO_COLOR": "1",
     };
+    const denoEnvFile = config.get<string>("envFile");
+    if (denoEnvFile) {
+      if (workspaceFolder) {
+        const denoEnvPath = path.join(workspaceFolder.uri.fsPath, denoEnvFile);
+        try {
+          const content = fs.readFileSync(denoEnvPath, { encoding: "utf8" });
+          const parsed = dotenv.parse(content);
+          Object.assign(env, parsed);
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Could not read env file "${denoEnvPath}": ${error}`,
+          );
+        }
+      }
+    }
+    const denoEnv = config.get<Record<string, string>>("env");
+    if (denoEnv) {
+      Object.assign(env, denoEnv);
+    }
     if (config.get<boolean>("future")) {
       env["DENO_FUTURE"] = "1";
     }
+    env["NO_COLOR"] = "1";
+    env["DENO_V8_FLAGS"] = getV8Flags();
 
     const serverOptions: ServerOptions = {
       run: {
@@ -147,6 +184,20 @@ export function startLanguageServer(
       serverOptions,
       {
         outputChannel: extensionContext.outputChannel,
+        middleware: {
+          workspace: {
+            configuration: (params, token, next) => {
+              const response = next(params, token) as Record<string, unknown>[];
+              for (let i = 0; i < response.length; i++) {
+                const item = params.items[i];
+                if (item.section == "deno") {
+                  transformDenoConfiguration(extensionContext, response[i]);
+                }
+              }
+              return response;
+            },
+          },
+        },
         ...extensionContext.clientOptions,
       },
     );
@@ -190,51 +241,43 @@ export function startLanguageServer(
       ),
     );
 
-    // TODO(nayeemrmn): LSP version < 1.40.0 don't support the required API for
-    // "deno/didChangeDenoConfiguration". Remove this eventually.
-    if (semver.lt(extensionContext.serverInfo.version, "1.40.0")) {
-      extensionContext.scopesWithDenoJson = new Set();
-      extensionContext.clientSubscriptions.push(
-        extensionContext.client.onNotification(
-          "deno/didChangeDenoConfiguration",
-          () => {
-            extensionContext.tasksSidebar.refresh();
-          },
-        ),
-      );
-      extensionContext.clientSubscriptions.push(
-        await setupCheckConfig(extensionContext),
-      );
-    } else {
-      const scopesWithDenoJson = new Set<string>();
-      extensionContext.scopesWithDenoJson = scopesWithDenoJson;
-      extensionContext.clientSubscriptions.push(
-        extensionContext.client.onNotification(
-          "deno/didChangeDenoConfiguration",
-          ({ changes }: DidChangeDenoConfigurationParams) => {
-            let changedScopes = false;
-            for (const change of changes) {
-              if (change.configurationType != "denoJson") {
-                continue;
-              }
-              if (change.type == "added") {
-                const scopePath = vscode.Uri.parse(change.scopeUri).fsPath;
-                scopesWithDenoJson.add(scopePath);
-                changedScopes = true;
-              } else if (change.type == "removed") {
-                const scopePath = vscode.Uri.parse(change.scopeUri).fsPath;
-                scopesWithDenoJson.delete(scopePath);
-                changedScopes = true;
-              }
+    const scopesWithDenoJson = new Set<string>();
+    extensionContext.scopesWithDenoJson = scopesWithDenoJson;
+    extensionContext.clientSubscriptions.push(
+      extensionContext.client.onNotification(
+        "deno/didChangeDenoConfiguration",
+        async ({ changes }: DidChangeDenoConfigurationParams) => {
+          let changedScopes = false;
+          const addedDenoJsonUris = [];
+          for (const change of changes) {
+            if (change.configurationType != "denoJson") {
+              continue;
             }
-            if (changedScopes) {
-              extensionContext.tsApi?.refresh();
+            if (change.type == "added") {
+              const scopePath = vscode.Uri.parse(change.scopeUri).fsPath;
+              scopesWithDenoJson.add(scopePath);
+              changedScopes = true;
+              addedDenoJsonUris.push(vscode.Uri.parse(change.fileUri));
+            } else if (change.type == "removed") {
+              const scopePath = vscode.Uri.parse(change.scopeUri).fsPath;
+              scopesWithDenoJson.delete(scopePath);
+              changedScopes = true;
             }
-            extensionContext.tasksSidebar.refresh();
-          },
-        ),
-      );
-    }
+          }
+          if (changedScopes) {
+            extensionContext.tsApi?.refresh();
+          }
+          extensionContext.tasksSidebar.refresh();
+          for (const addedDenoJsonUri of addedDenoJsonUris) {
+            await maybeShowTsConfigPrompt(
+              context,
+              extensionContext,
+              addedDenoJsonUri,
+            );
+          }
+        },
+      ),
+    );
 
     extensionContext.tsApi.refresh();
 
@@ -282,6 +325,20 @@ function notifyServerSemver(serverVersion: string) {
   );
 }
 
+/** Mutates the `config` parameter. For compatibility currently. */
+export function transformDenoConfiguration(
+  extensionContext: DenoExtensionContext,
+  config: Record<string, unknown>,
+) {
+  // TODO(nayeemrmn): Deno > 2.0.0-rc.1 expects `deno.unstable` as
+  // an array of features. Remove this eventually.
+  if (
+    semver.lte(extensionContext.serverInfo?.version || "1.0.0", "2.0.0-rc.1")
+  ) {
+    config.unstable = !!config.unstable;
+  }
+}
+
 function showWelcomePageIfFirstUse(
   context: vscode.ExtensionContext,
   extensionContext: DenoExtensionContext,
@@ -292,6 +349,167 @@ function showWelcomePageIfFirstUse(
   if (!welcomeShown) {
     welcome(context, extensionContext)();
     context.globalState.update("deno.welcomeShown", true);
+  }
+}
+
+function isObject(value: unknown) {
+  return value && typeof value == "object" && !Array.isArray(value);
+}
+
+/**
+ * For a discovered deno.json file, see if there's an adjacent tsconfig.json.
+ * Offer options to either copy over the compiler options from it, or disable
+ * the Deno LSP if it contains plugins.
+ */
+async function maybeShowTsConfigPrompt(
+  context: vscode.ExtensionContext,
+  extensionContext: DenoExtensionContext,
+  denoJsonUri: vscode.Uri,
+) {
+  const denoJsonPath = denoJsonUri.fsPath;
+  if (!isPathEnabled(extensionContext, denoJsonPath)) {
+    return;
+  }
+  const scopePath = path.dirname(denoJsonPath) + path.sep;
+  const tsConfigPath = path.join(scopePath, "tsconfig.json");
+  const tsConfigPathsWithPromptHidden = context.globalState.get<string[]>(
+    "deno.tsConfigPathsWithPromptHidden",
+  ) ?? [];
+  if (tsConfigPathsWithPromptHidden?.includes?.(tsConfigPath)) {
+    return;
+  }
+  let tsConfigContent;
+  try {
+    const tsConfigText = await fs.promises.readFile(tsConfigPath, {
+      encoding: "utf8",
+    });
+    tsConfigContent = jsoncParser.parse(tsConfigText);
+  } catch {
+    return;
+  }
+  const compilerOptions = tsConfigContent?.compilerOptions;
+  if (!isObject(compilerOptions)) {
+    return;
+  }
+  for (const key in compilerOptions) {
+    if (!ALLOWED_COMPILER_OPTIONS.includes(key)) {
+      delete compilerOptions[key];
+    }
+  }
+  if (Object.entries(compilerOptions).length == 0) {
+    return;
+  }
+  const plugins = compilerOptions?.plugins;
+  let selection;
+  if (Array.isArray(plugins) && plugins.length) {
+    // This tsconfig.json contains plugins. Prompt to disable the LSP.
+    const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
+    let scopeFolderEntry = null;
+    const folderEntries = workspaceFolders.map((f) =>
+      [f.uri.fsPath + path.sep, f] as const
+    );
+    folderEntries.sort();
+    folderEntries.reverse();
+    for (const folderEntry of folderEntries) {
+      if (scopePath.startsWith(folderEntry[0])) {
+        scopeFolderEntry = folderEntry;
+        break;
+      }
+    }
+    if (!scopeFolderEntry) {
+      return;
+    }
+    const [scopeFolderPath, scopeFolder] = scopeFolderEntry;
+    selection = await vscode.window.showInformationMessage(
+      `A tsconfig.json with compiler options was discovered in a Deno-enabled folder. For projects with compiler plugins, it is recommended to disable the Deno language server if you are seeing errors (${tsConfigPath}).`,
+      "Disable Deno LSP",
+      "Hide this message",
+    );
+    if (selection == "Disable Deno LSP") {
+      const config = vscode.workspace.getConfiguration(
+        EXTENSION_NS,
+        scopeFolder,
+      );
+      if (scopePath == scopeFolderPath) {
+        await config.update("enable", false);
+      } else {
+        let disablePaths = config.get<string[]>("disablePaths");
+        if (!Array.isArray(disablePaths)) {
+          disablePaths = [];
+        }
+        const relativeUri = scopePath.substring(scopeFolderPath.length).replace(
+          /\\/g,
+          "/",
+        ).replace(/\/*$/, "");
+        disablePaths.push(relativeUri);
+        await config.update("disablePaths", disablePaths);
+      }
+    }
+  } else {
+    // This tsconfig.json has compiler options which may be copied to a
+    // deno.json. If the deno.json has no compiler options, prompt to copy them
+    // over.
+    let denoJsonText;
+    let denoJsonContent;
+    try {
+      denoJsonText = await fs.promises.readFile(denoJsonPath, {
+        encoding: "utf8",
+      });
+      denoJsonContent = jsoncParser.parse(denoJsonText);
+    } catch {
+      return;
+    }
+    if (!isObject(denoJsonContent) || "compilerOptions" in denoJsonContent) {
+      return;
+    }
+    selection = await vscode.window.showInformationMessage(
+      `A tsconfig.json with compiler options was discovered in a Deno-enabled folder. Would you like to copy these to your Deno configuration file? Note that only a subset of options are supported (${tsConfigPath}).`,
+      "Copy to deno.json[c]",
+      "Hide this message",
+    );
+    if (selection == "Copy to deno.json[c]") {
+      try {
+        let newDenoJsonContent = jsoncParser.applyEdits(
+          denoJsonText,
+          jsoncParser.modify(
+            denoJsonText,
+            ["compilerOptions"],
+            compilerOptions,
+            { formattingOptions: { insertSpaces: true, tabSize: 2 } },
+          ),
+        );
+        const unstable = Array.isArray(denoJsonContent.unstable)
+          ? denoJsonContent.unstable as unknown[]
+          : [];
+        if (!unstable.includes("sloppy-imports")) {
+          unstable.push("sloppy-imports");
+          newDenoJsonContent = jsoncParser.applyEdits(
+            newDenoJsonContent,
+            jsoncParser.modify(
+              newDenoJsonContent,
+              ["unstable"],
+              unstable,
+              { formattingOptions: { insertSpaces: true, tabSize: 2 } },
+            ),
+          );
+        }
+        await fs.promises.writeFile(denoJsonPath, newDenoJsonContent);
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `Could not modify "${denoJsonPath}": ${error}`,
+        );
+      }
+    }
+  }
+  if (selection == "Hide this message") {
+    const tsConfigPathsWithPromptHidden = context.globalState.get<string[]>(
+      "deno.tsConfigPathsWithPromptHidden",
+    ) ?? [];
+    tsConfigPathsWithPromptHidden?.push?.(tsConfigPath);
+    context.globalState.update(
+      "deno.tsConfigPathsWithPromptHidden",
+      tsConfigPathsWithPromptHidden,
+    );
   }
 }
 
@@ -332,13 +550,17 @@ export function test(
 ): Callback {
   return async (uriStr: string, name: string, options: TestCommandOptions) => {
     const uri = vscode.Uri.parse(uriStr, true);
-    const path = uri.fsPath;
+    const filePath = uri.fsPath;
     const config = vscode.workspace.getConfiguration(EXTENSION_NS, uri);
     const testArgs: string[] = [
       ...(config.get<string[]>("codeLens.testArgs") ?? []),
     ];
-    if (config.get("unstable")) {
-      testArgs.push("--unstable");
+    const unstable = config.get("unstable") as string[] ?? [];
+    for (const unstableFeature of unstable) {
+      const flag = `--unstable-${unstableFeature}`;
+      if (!testArgs.includes(flag)) {
+        testArgs.push(flag);
+      }
     }
     if (options?.inspect) {
       testArgs.push(getInspectArg(extensionContext.serverInfo?.version));
@@ -349,7 +571,27 @@ export function test(
         testArgs.push("--import-map", importMap.trim());
       }
     }
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const env = {} as Record<string, string>;
+    const denoEnvFile = config.get<string>("envFile");
+    if (denoEnvFile) {
+      if (workspaceFolder) {
+        const denoEnvPath = path.join(workspaceFolder.uri.fsPath, denoEnvFile);
+        try {
+          const content = fs.readFileSync(denoEnvPath, { encoding: "utf8" });
+          const parsed = dotenv.parse(content);
+          Object.assign(env, parsed);
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Could not read env file "${denoEnvPath}": ${error}`,
+          );
+        }
+      }
+    }
+    const denoEnv = config.get<Record<string, string>>("env");
+    if (denoEnv) {
+      Object.assign(env, denoEnv);
+    }
     const cacheDir: string | undefined | null = config.get("cache");
     if (cacheDir?.trim()) {
       env["DENO_DIR"] = cacheDir.trim();
@@ -358,7 +600,7 @@ export function test(
       env["DENO_FUTURE"] = "1";
     }
     const nameRegex = `/^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$/`;
-    const args = ["test", ...testArgs, "--filter", nameRegex, path];
+    const args = ["test", ...testArgs, "--filter", nameRegex, filePath];
 
     const definition: tasks.DenoTaskDefinition = {
       type: tasks.TASK_TYPE,
@@ -367,11 +609,10 @@ export function test(
       env,
     };
 
-    assert(vscode.workspace.workspaceFolders);
-    const target = vscode.workspace.workspaceFolders[0];
+    assert(workspaceFolder);
     const denoCommand = await getDenoCommandName();
     const task = tasks.buildDenoTask(
-      target,
+      workspaceFolder,
       denoCommand,
       definition,
       `test "${name}"`,
@@ -389,7 +630,7 @@ export function test(
     const createdTask = await vscode.tasks.executeTask(task);
 
     if (options?.inspect) {
-      await vscode.debug.startDebugging(target, {
+      await vscode.debug.startDebugging(workspaceFolder, {
         name,
         request: "attach",
         type: "node",
@@ -430,6 +671,25 @@ export function enable(
     const config = vscode.workspace.getConfiguration(EXTENSION_NS);
     await config.update("enable", true);
     vscode.window.showInformationMessage("Deno workspace initialized.");
+    const tsserverConfig = vscode.workspace.getConfiguration(
+      "typescript.tsserver",
+    );
+    if (tsserverConfig.get<boolean>("experimental.enableProjectDiagnostics")) {
+      try {
+        await tsserverConfig.update(
+          "experimental.enableProjectDiagnostics",
+          false,
+          vscode.ConfigurationTarget.Workspace,
+        );
+        vscode.window.showInformationMessage(
+          'Disabled "typescript.tsserver.experimental.enableProjectDiagnostics" for the workspace. The Deno extension is incompatible with this setting. See: https://github.com/denoland/vscode_deno/issues/437#issuecomment-1720393193.',
+        );
+      } catch {
+        vscode.window.showWarningMessage(
+          'Setting "typescript.tsserver.experimental.enableProjectDiagnostics" is incompatible with the Deno extension. Either disable it in your user settings, or create a workspace and run the "Deno: Enable" command again. See: https://github.com/denoland/vscode_deno/issues/437#issuecomment-1720393193.',
+        );
+      }
+    }
   };
 }
 
@@ -460,3 +720,41 @@ function isDenoDisabledCompletely(): boolean {
     vscode.workspace.getConfiguration(EXTENSION_NS, f)
   ).every(isScopeDisabled);
 }
+
+// Keep this in sync with the supported compiler options set in CLI. Currently:
+// https://github.com/denoland/deno_config/blob/0.47.1/src/deno_json/ts.rs#L85-L119
+const ALLOWED_COMPILER_OPTIONS = [
+  "allowUnreachableCode",
+  "allowUnusedLabels",
+  "checkJs",
+  "emitDecoratorMetadata",
+  "exactOptionalPropertyTypes",
+  "experimentalDecorators",
+  "isolatedDeclarations",
+  "jsx",
+  "jsxFactory",
+  "jsxFragmentFactory",
+  "jsxImportSource",
+  "jsxPrecompileSkipElements",
+  "lib",
+  "noErrorTruncation",
+  "noFallthroughCasesInSwitch",
+  "noImplicitAny",
+  "noImplicitOverride",
+  "noImplicitReturns",
+  "noImplicitThis",
+  "noPropertyAccessFromIndexSignature",
+  "noUncheckedIndexedAccess",
+  "noUnusedLocals",
+  "noUnusedParameters",
+  "rootDirs",
+  "strict",
+  "strictBindCallApply",
+  "strictBuiltinIteratorReturn",
+  "strictFunctionTypes",
+  "strictNullChecks",
+  "strictPropertyInitialization",
+  "types",
+  "useUnknownInCatchVariables",
+  "verbatimModuleSyntax",
+];
