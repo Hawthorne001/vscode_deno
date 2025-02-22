@@ -44,6 +44,8 @@ function handleConfigurationChange(event: vscode.ConfigurationChangeEvent) {
       event.affectsConfiguration("deno.enable") ||
       event.affectsConfiguration("deno.disablePaths") ||
       event.affectsConfiguration("deno.enablePaths") ||
+      event.affectsConfiguration("deno.env") ||
+      event.affectsConfiguration("deno.envFile") ||
       event.affectsConfiguration("deno.future") ||
       event.affectsConfiguration("deno.internalInspect") ||
       event.affectsConfiguration("deno.logFile") ||
@@ -87,6 +89,18 @@ export async function activate(
       { scheme: "file", language: "json" },
       { scheme: "file", language: "jsonc" },
       { scheme: "file", language: "markdown" },
+      { scheme: "file", language: "html" },
+      { scheme: "file", language: "css" },
+      { scheme: "file", language: "scss" },
+      { scheme: "file", language: "sass" },
+      { scheme: "file", language: "less" },
+      { scheme: "file", language: "yaml" },
+      { scheme: "file", language: "sql" },
+      { scheme: "file", language: "svelte" },
+      { scheme: "file", language: "vue" },
+      { scheme: "file", language: "astro" },
+      { scheme: "file", language: "vento" },
+      { scheme: "file", language: "nunjucks" },
       { scheme: "untitled", language: "javascript" },
       { scheme: "untitled", language: "javascriptreact" },
       { scheme: "untitled", language: "typescript" },
@@ -94,6 +108,18 @@ export async function activate(
       { scheme: "untitled", language: "json" },
       { scheme: "untitled", language: "jsonc" },
       { scheme: "untitled", language: "markdown" },
+      { scheme: "untitled", language: "html" },
+      { scheme: "untitled", language: "css" },
+      { scheme: "untitled", language: "scss" },
+      { scheme: "untitled", language: "sass" },
+      { scheme: "untitled", language: "less" },
+      { scheme: "untitled", language: "yaml" },
+      { scheme: "untitled", language: "sql" },
+      { scheme: "untitled", language: "svelte" },
+      { scheme: "untitled", language: "vue" },
+      { scheme: "untitled", language: "astro" },
+      { scheme: "untitled", language: "vento" },
+      { scheme: "untitled", language: "nunjucks" },
       { scheme: "deno", language: "javascript" },
       { scheme: "deno", language: "javascriptreact" },
       { scheme: "deno", language: "typescript" },
@@ -101,6 +127,18 @@ export async function activate(
       { scheme: "deno", language: "json" },
       { scheme: "deno", language: "jsonc" },
       { scheme: "deno", language: "markdown" },
+      { scheme: "deno", language: "html" },
+      { scheme: "deno", language: "css" },
+      { scheme: "deno", language: "scss" },
+      { scheme: "deno", language: "sass" },
+      { scheme: "deno", language: "less" },
+      { scheme: "deno", language: "yaml" },
+      { scheme: "deno", language: "sql" },
+      { scheme: "deno", language: "svelte" },
+      { scheme: "deno", language: "vue" },
+      { scheme: "deno", language: "astro" },
+      { scheme: "deno", language: "vento" },
+      { scheme: "deno", language: "nunjucks" },
       { notebook: "*", language: "javascript" },
       { notebook: "*", language: "javascriptreact" },
       { notebook: "*", language: "typescript" },
@@ -127,8 +165,12 @@ export async function activate(
     },
     diagnosticCollectionName: "deno",
     initializationOptions: () => {
+      const denoConfiguration = vscode.workspace.getConfiguration().get(
+        EXTENSION_NS,
+      ) as Record<string, unknown>;
+      commands.transformDenoConfiguration(extensionContext, denoConfiguration);
       return {
-        ...vscode.workspace.getConfiguration().get(EXTENSION_NS),
+        ...denoConfiguration,
         javascript: vscode.workspace.getConfiguration().get("javascript"),
         typescript: vscode.workspace.getConfiguration().get("typescript"),
         enableBuiltinCommands: true,
@@ -211,6 +253,10 @@ export async function activate(
   registerCommand(
     "deno.client.cacheActiveDocument",
     commands.cacheActiveDocument,
+  );
+  registerCommand(
+    "deno.client.clearHiddenPromptStorage",
+    commands.clearHiddenPromptStorage,
   );
   registerCommand("deno.client.restart", commands.startLanguageServer);
   registerCommand("deno.client.info", commands.info);
