@@ -3,6 +3,75 @@
 Releases of the extension can be downloaded from
 [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=denoland.vscode-deno).
 
+### [3.43.4](https://github.com/denoland/vscode_deno/compare/3.43.4...3.43.5) / 2025.02.26
+
+- Revert "fix: move extended language formatting to client" (#1261)
+
+### [3.43.4](https://github.com/denoland/vscode_deno/compare/3.43.3...3.43.4) / 2025.02.25
+
+- fix: move extended language formatting to client (#1258)
+
+### [3.43.3](https://github.com/denoland/vscode_deno/compare/3.43.2...3.43.3) / 2025.01.30
+
+- chore: include "rootDirs" when transferring compiler options (#1248)
+
+### [3.43.2](https://github.com/denoland/vscode_deno/compare/3.43.1...3.43.2) / 2025.01.02
+
+- chore: sync css preprocessor documents with the lsp (#1233)
+- fix: add svelte as a recognised file for deno extension (#1227)
+- fix: lockfile schema - remote is not required (#1225)
+
+### [3.43.1](https://github.com/denoland/vscode_deno/compare/3.43.0...3.43.1) / 2024.12.13
+
+- chore: sync sql and component documents with the lsp (#1223)
+
+### [3.43.0](https://github.com/denoland/vscode_deno/compare/3.42.0...3.43.0) / 2024.11.26
+
+- feat: "deno.trace.server" setting (#1189)
+- feat: enable "sloppy-imports" by tsconfig prompt (#1208)
+- feat: disable "enableProjectDiagnostics" on enable (#1191)
+- fix: support task object notation in sidebar (#1214)
+
+### [3.42.0](https://github.com/denoland/vscode_deno/compare/3.41.1...3.42.0) / 2024.10.13
+
+- feat: lockfile v4 schema (#1182)
+- feat: update icon for Deno 2 (#1175)
+- chore: update links (#1174)
+
+### [3.41.1](https://github.com/denoland/vscode_deno/compare/3.41.0...3.41.1) / 2024.10.07
+
+- chore: log to the output window if disabled completely (#1172)
+
+### [3.41.0](https://github.com/denoland/vscode_deno/compare/3.40.0...3.41.0) / 2024.09.23
+
+- feat: helper prompts for tsconfig.json compiler options (#1166)
+- feat: use --inspect-wait for prerelease deno (#1150)
+
+### [3.40.0](https://github.com/denoland/vscode_deno/compare/3.39.0...3.40.0) / 2024.09.10
+
+- feat: unstable setting as list (#1159)
+
+### [3.39.0](https://github.com/denoland/vscode_deno/compare/3.38.2...3.39.0) / 2024.09.02
+
+- chore: sync html/css/yaml documents with the lsp (#1154)
+
+### [3.38.2](https://github.com/denoland/vscode_deno/compare/3.38.1...3.38.2) / 2024.08.13
+
+- fix: downgrade vsce to 2.31.0 to fix broken imports (#1147)
+
+### [3.38.1](https://github.com/denoland/vscode_deno/compare/3.38.0...3.38.1) / 2024.08.13
+
+- fix: use includePrerelease when checking minimum server version (#1142)
+
+### [3.38.0](https://github.com/denoland/vscode_deno/compare/3.37.1...3.38.0) / 2024.07.03
+
+- feat: "deno.env" and "deno.envFile" settings (#1128)
+
+### [3.37.1](https://github.com/denoland/vscode_deno/compare/3.37.0...3.37.1) / 2024.05.09
+
+- fix: handle nested config files in tasks sidebar (#1111)
+- fix: don't spawn the language server if explicitly disabled settings (#1109)
+
 ### [3.37.0](https://github.com/denoland/vscode_deno/compare/3.36.0...3.37.0) / 2024.04.12
 
 - fix: normalize notebook cell filename in plugin (#1103)

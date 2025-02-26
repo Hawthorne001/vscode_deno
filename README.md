@@ -9,7 +9,7 @@
 
 <img align="right" src=https://raw.githubusercontent.com/denoland/vscode_deno/main/deno.png height="150px">
 
-This extension adds support for using [Deno](https://deno.land/) with Visual
+This extension adds support for using [Deno](https://deno.com/) with Visual
 Studio Code, powered by the Deno language server.
 
 > ⚠️ **Important:** You need to have a version of Deno CLI installed (v1.13.0 or
@@ -17,7 +17,7 @@ Studio Code, powered by the Deno language server.
 > environment path. You can explicitly set the path to the executable in Visual
 > Studio Code Settings for `deno.path`.
 >
-> [Check here](https://deno.land/#installation) for instructions on how to
+> [Check here](https://docs.deno.com/runtime/) for instructions on how to
 > install the Deno CLI.
 
 ![Basic Usage of the Extension](./screenshots/basic_usage.gif)
@@ -128,7 +128,7 @@ automatically in some cases:
 The formatter will respect the settings in your Deno configuration file, which
 can be explicitly set via `deno.config` or automatically detected in the
 workspace. You can find more information about formatter settings at
-[Deno Tools - Formatter](https://deno.land/manual/tools/formatter).
+[Deno Tools - Formatter](https://docs.deno.com/runtime/reference/cli/formatter/).
 
 > ℹ️ &nbsp; It does not currently provide format-on-paste or format-on-type
 > capabilities.
@@ -180,7 +180,7 @@ extension has the following configuration options:
   disable document preloading.
 - `deno.importMap`: The file path to an import map. This is the equivalent to
   using `--import-map` on the command line.
-  [Import maps](https://deno.land/manual/linking_to_external_code/import_maps)
+  [Import maps](https://docs.deno.com/runtime/fundamentals/configuration/#dependencies)
   provide a way to "relocate" modules based on their specifiers. The path can
   either be relative to the workspace, or an absolute path. _string, default
   `null`, examples: `./import_map.json`, `/path/to/import_map.json`,
@@ -224,12 +224,13 @@ extension has the following configuration options:
 To see which versions of this extension can be used with each version of the
 Deno CLI, consult the following table.
 
-| Deno CLI       | vscode-deno     |
-| -------------- | --------------- |
-| 1.37.2 onwards | 3.34.0 onwards  |
-| 1.37.1         | 3.32.0 - 3.33.3 |
-| 1.37.0         | 3.28.0 - 3.31.0 |
-| ? - 1.36.4     | 3.27.0          |
+| Deno CLI        | vscode-deno     |
+| --------------- | --------------- |
+| 1.40.0 onwards  | 3.40.0 onwards  |
+| 1.37.2 - 1.39.4 | 3.34.0 - 3.39.0 |
+| 1.37.1          | 3.32.0 - 3.33.3 |
+| 1.37.0          | 3.28.0 - 3.31.0 |
+| ? - 1.36.4      | 3.27.0          |
 
 Version ranges are inclusive. Incompatibilites prior to 3.27.0 were not tracked.
 

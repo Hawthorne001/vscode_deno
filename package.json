@@ -4,7 +4,7 @@
   "description": "A language server client for Deno.",
   "author": "Deno Land Inc.",
   "license": "MIT",
-  "version": "3.37.0",
+  "version": "3.43.5",
   "icon": "deno.png",
   "galleryBanner": {
     "color": "#3B3738",
@@ -29,7 +29,7 @@
     "deno"
   ],
   "engines": {
-    "vscode": "^1.60.0"
+    "vscode": "^1.77.0"
   },
   "activationEvents": [
     "onLanguage:typescript",
@@ -47,6 +47,7 @@
     "onCommand:deno.client.welcome",
     "onCommand:deno.client.enable",
     "onCommand:deno.client.disable",
+    "onCommand:deno.client.clearHiddenPromptStorage",
     "onCommand:deno.reloadImportRegistries",
     "onWebviewPanel:welcomeDeno"
   ],
@@ -85,6 +86,13 @@
         "title": "Cache Dependencies",
         "category": "Deno",
         "description": "Cache the active workspace document and its dependencies.",
+        "enablement": "deno:lspReady"
+      },
+      {
+        "command": "deno.client.clearHiddenPromptStorage",
+        "title": "Clear Hidden Prompt Storage",
+        "category": "Deno",
+        "description": "Undo all 'hide this message' actions.",
         "enablement": "deno:lspReady"
       },
       {
@@ -238,6 +246,31 @@
             "C:\\Program Files\\deno\\deno.exe"
           ]
         },
+        "deno.env": {
+          "type": "object",
+          "default": {},
+          "patternProperties": {
+            ".+": {
+              "type": "string"
+            }
+          },
+          "markdownDescription": "Additional environment variables to pass to Deno processes. Overrides the user's env and `deno.envFile`. These will be overridden by more specific settings such as `deno.future` for `DENO_FUTURE`, and invariables like `NO_COLOR=1`.",
+          "scope": "window",
+          "examples": [
+            {
+              "HTTP_PROXY": "http://localhost:8080"
+            }
+          ]
+        },
+        "deno.envFile": {
+          "type": "string",
+          "default": null,
+          "markdownDescription": "Env file containing additional environment variables to pass to Deno processes. Overrides the user's env. These will be overridden by `deno.env`, more specific settings such as `deno.future` for `DENO_FUTURE`, and invariables like `NO_COLOR=1`.",
+          "scope": "window",
+          "examples": [
+            ".env"
+          ]
+        },
         "deno.cache": {
           "type": "string",
           "default": null,
@@ -324,6 +357,7 @@
           ]
         },
         "deno.future": {
+          "deprecationMessage": "Deno 2.0 has been released. This setting still affects 1.x.x installations, however.",
           "type": "boolean",
           "markdownDescription": "Enable breaking features likely to be shipped in Deno 2.0.",
           "default": false,
@@ -446,6 +480,16 @@
           "markdownDescription": "If enabled, when new hosts/origins are encountered that support import suggestions, you will be prompted to enable or disable it.  Defaults to `true`.",
           "scope": "resource"
         },
+        "deno.trace.server": {
+          "enum": [
+            "messages",
+            "off",
+            "verbose"
+          ],
+          "default": "off",
+          "markdownDescription": "Traces the communication between VS Code and the Deno Language Server.",
+          "scope": "window"
+        },
         "deno.suggest.imports.hosts": {
           "type": "object",
           "default": {
@@ -485,14 +529,13 @@
           "scope": "window"
         },
         "deno.unstable": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "Controls if tests will be run with the the `--unstable` flag when running tests via the explorer.\n\n**Not recommended to be enabled globally.**",
-          "scope": "resource",
-          "examples": [
-            true,
-            false
-          ]
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Controls which `--unstable-*` features tests will be run with when running them via the explorer.\n\n**Not recommended to be enabled globally.**",
+          "scope": "resource"
         },
         "deno.lint": {
           "type": "boolean",

@@ -30,6 +30,9 @@ export const registryState = new NotificationType<RegistryStateParams>(
 
 export interface TaskRequestResponse {
   name: string;
+  // TODO(nayeemrmn): `detail` is renamed to `command` for Deno > 2.1.1. Remove
+  // `detail` eventually.
+  command: string | null;
   detail: string;
   sourceUri: string;
 }
@@ -94,6 +97,9 @@ export interface TestRunRequestParams {
 
   /** The run kind. Currently Deno only supports `"run"` */
   kind: "run" | "coverage" | "debug";
+
+  /** Whether the run should watch the files and continously re-run. */
+  isContinuous: boolean;
 
   /** Test modules or tests to exclude from the test run. */
   exclude?: TestIdentifier[];
@@ -207,6 +213,11 @@ interface TestOutput {
   location?: Location;
 }
 
+interface TestRunRestart {
+  type: "restart";
+  enqueued: EnqueuedTestModule[]
+}
+
 interface TestEnd {
   /** The test run has ended. */
   type: "end";
@@ -217,6 +228,7 @@ type TestRunProgressMessage =
   | TestFailedErrored
   | TestPassed
   | TestOutput
+  | TestRunRestart
   | TestEnd;
 
 export interface TestRunProgressParams {
